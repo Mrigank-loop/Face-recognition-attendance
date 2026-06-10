@@ -1,170 +1,108 @@
 import cv2
-import numpy as np
-import face_recognition
-import os
+import mediapipe as mp
+import pandas as pd
 from datetime import datetime
+import os
 
-path = 'images'
+CSV_FILE = "Attendance.csv"
 
-images = []
-classNames = []
-
-myList = os.listdir(path)
-
-for cl in myList:
-
-    curImg = cv2.imread(f'{path}/{cl}')
-
-    images.append(curImg)
-
-    classNames.append(
-        os.path.splitext(cl)[0]
+if not os.path.exists(CSV_FILE):
+    pd.DataFrame(columns=["Name", "Time"]).to_csv(
+        CSV_FILE,
+        index=False
     )
 
-def findEncodings(images):
+name = input("Mrigank ")
 
-    encodeList = []
-
-    for img in images:
-
-        img = cv2.cvtColor(
-            img,
-            cv2.COLOR_BGR2RGB
-        )
-
-        encode = face_recognition.face_encodings(img)[0]
-
-        encodeList.append(encode)
-
-    return encodeList
-
-def markAttendance(name):
-
-    with open(
-        'Attendance.csv',
-        'r+'
-    ) as f:
-
-        myDataList = f.readlines()
-
-        nameList = []
-
-        for line in myDataList:
-
-            entry = line.split(',')
-
-            nameList.append(entry[0])
-
-        if name not in nameList:
-
-            now = datetime.now()
-
-            dtString = now.strftime(
-                '%H:%M:%S'
-            )
-
-            f.writelines(
-                f'\n{name},{dtString}'
-            )
-
-encodeListKnown = findEncodings(images)
-
-print("Encoding Complete")
+mp_face = mp.solutions.face_detection
+face_detection = mp_face.FaceDetection(
+    model_selection=0,
+    min_detection_confidence=0.7
+)
 
 cap = cv2.VideoCapture(0)
 
+attendance_marked = False
+
 while True:
 
-    success, img = cap.read()
+    success, frame = cap.read()
 
-    imgS = cv2.resize(
-        img,
-        (0, 0),
-        None,
-        0.25,
-        0.25
-    )
+    if not success:
+        break
 
-    imgS = cv2.cvtColor(
-        imgS,
+    rgb = cv2.cvtColor(
+        frame,
         cv2.COLOR_BGR2RGB
     )
 
-    facesCurFrame = face_recognition.face_locations(
-        imgS
-    )
+    results = face_detection.process(rgb)
 
-    encodesCurFrame = face_recognition.face_encodings(
-        imgS,
-        facesCurFrame
-    )
+    if results.detections:
 
-    for encodeFace, faceLoc in zip(
-        encodesCurFrame,
-        facesCurFrame
-    ):
+        for detection in results.detections:
 
-        matches = face_recognition.compare_faces(
-            encodeListKnown,
-            encodeFace
-        )
+            bbox = detection.location_data.relative_bounding_box
 
-        faceDis = face_recognition.face_distance(
-            encodeListKnown,
-            encodeFace
-        )
+            h, w, _ = frame.shape
 
-        matchIndex = np.argmin(faceDis)
-
-        if matches[matchIndex]:
-
-            name = classNames[
-                matchIndex
-            ].upper()
-
-            y1, x2, y2, x1 = faceLoc
-
-            y1 *= 4
-            x2 *= 4
-            y2 *= 4
-            x1 *= 4
+            x = int(bbox.xmin * w)
+            y = int(bbox.ymin * h)
+            bw = int(bbox.width * w)
+            bh = int(bbox.height * h)
 
             cv2.rectangle(
-                img,
-                (x1, y1),
-                (x2, y2),
+                frame,
+                (x, y),
+                (x + bw, y + bh),
                 (0, 255, 0),
                 2
-            )
-
-            cv2.rectangle(
-                img,
-                (x1, y2 - 35),
-                (x2, y2),
-                (0, 255, 0),
-                cv2.FILLED
             )
 
             cv2.putText(
-                img,
+                frame,
                 name,
-                (x1 + 6, y2 - 6),
-                cv2.FONT_HERSHEY_COMPLEX,
-                1,
-                (255, 255, 255),
+                (x, y - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 255, 0),
                 2
             )
 
-            markAttendance(name)
+            if not attendance_marked:
+
+                now = datetime.now()
+
+                time_now = now.strftime("%H:%M:%S")
+
+                df = pd.read_csv(CSV_FILE)
+
+                if name not in df["Name"].values:
+
+                    new_row = pd.DataFrame(
+                        [[name, time_now]],
+                        columns=["Name", "Time"]
+                    )
+
+                    df = pd.concat(
+                        [df, new_row],
+                        ignore_index=True
+                    )
+
+                    df.to_csv(
+                        CSV_FILE,
+                        index=False
+                    )
+
+                attendance_marked = True
 
     cv2.imshow(
-        'Attendance System',
-        img
+        "Face Attendance System",
+        frame
     )
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 cap.release()
-
 cv2.destroyAllWindows()
