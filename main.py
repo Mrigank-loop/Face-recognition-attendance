@@ -12,7 +12,7 @@ if not os.path.exists(CSV_FILE):
         index=False
     )
 
-name = input("Mrigank ")
+name = "Mrigank"
 
 mp_face = mp.solutions.face_detection
 face_detection = mp_face.FaceDetection(
